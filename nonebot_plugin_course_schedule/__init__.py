@@ -28,6 +28,8 @@ from nonebot import require
 require("nonebot_plugin_apscheduler")
 require("nonebot_plugin_localstore")
 
+from nonebot_plugin_apscheduler import scheduler
+
 from typing import Union
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import (
@@ -41,6 +43,15 @@ from .commands import (
     show_today,
     group_schedule,
     weekly_ranking,
+)
+from .utils.reminder import check_and_send_reminders
+
+scheduler.add_job(
+    check_and_send_reminders,
+    "cron",
+    minute="*",
+    id="course_schedule_reminder",
+    replace_existing=True,
 )
 
 help_cmd = on_command(
