@@ -65,23 +65,22 @@ class ImageGenerator:
         draw.pieslice([x1, y2 - radius * 2, x1 + radius * 2, y2], 90, 180, fill=fill)
         draw.pieslice([x2 - radius * 2, y2 - radius * 2, x2, y2], 0, 90, fill=fill)
 
-    async def _fetch_avatars(self, user_ids: List[str]) -> List[bytes]:
+    async def _fetch_avatars(self, avatar_urls: List[str | None]) -> List[bytes | None]:
         """异步获取多个用户的头像"""
 
-        async def fetch_avatar(session, user_id):
-            avatar_url = (
-                f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=100"
-            )
+        async def fetch_avatar(session, avatar_url: str | None):
+            if not avatar_url:
+                return None
             try:
                 async with session.get(avatar_url) as response:
                     if response.status == 200:
                         return await response.read()
             except Exception as e:
-                logger.error(f"Failed to download avatar for {user_id}: {e}")
+                logger.error(f"Failed to download avatar from {avatar_url}: {e}")
             return None
 
         async with aiohttp.ClientSession() as session:
-            tasks = [fetch_avatar(session, user_id) for user_id in user_ids]
+            tasks = [fetch_avatar(session, avatar_url) for avatar_url in avatar_urls]
             return await asyncio.gather(*tasks)
         
     def _estimate_char_units(self, text: str) -> int:
@@ -146,19 +145,19 @@ class ImageGenerator:
             fill="#A7FFEB",
         )
 
-        user_ids = [course.get("user_id", "N/A") for course in courses]
-        avatar_datas = await self._fetch_avatars(user_ids)
+        avatar_urls = [course.get("avatar") for course in courses]
+        avatar_datas = await self._fetch_avatars(avatar_urls)
 
         y_offset = c.GS_PADDING + 120
         now = datetime.now(timezone(timedelta(hours=8)))
 
         for i, course in enumerate(courses):
             user_id = course.get("user_id", "N/A")
-            nickname = course.get("nickname", user_id)
-            summary = course.get("summary", "无课程信息")
+            nickname = course.get("nickname", user_id) or user_id
+            summary = course.get("summary") or "无课程信息"
             start_time = course.get("start_time")
             end_time = course.get("end_time")
-            location = course.get("location", "未知地点")
+            location = course.get("location") or "未知地点"
 
             avatar_data = avatar_datas[i]
             if avatar_data:
@@ -207,8 +206,8 @@ class ImageGenerator:
                     status_text = "已结束"
                     detail_text = "今日所有课程已结束"
             else:
-                status_text = "已结束"
-                detail_text = "今日所有课程已结束"
+                status_text = "无课程"
+                detail_text = "当天没有可显示的课程"
 
             text_x = arrow_x + 50
             nickname = self._sanitize_for_pil(nickname, self.font_main)
@@ -283,9 +282,9 @@ class ImageGenerator:
         # 超长 course 换行预算
         course_heights = []
         for course in courses:
-            summary = course.get("summary", "无课程信息")
-            location = course.get("location", "未知地点")
-            teacher = course.get("description", "未知教师")
+            summary = course.get("summary") or "无课程信息"
+            location = course.get("location") or "未知地点"
+            teacher = course.get("description") or "未知教师"
             
             # 如果整体长度不长则单行显示
             test_line = self._wrap_text(f"{summary} @ {location} @ {teacher}", c.US_ROW_MAX_UNIT)
@@ -319,11 +318,11 @@ class ImageGenerator:
         y_offset = c.US_PADDING * 2 + title_height
 
         for course in courses:
-            summary = course.get("summary", "无课程信息")
+            summary = course.get("summary") or "无课程信息"
             start_time = course.get("start_time")
             end_time = course.get("end_time")
-            location = course.get("location", "未知地点")
-            teacher = course.get("description", "未知教师")
+            location = course.get("location") or "未知地点"
+            teacher = course.get("description") or "未知教师"
 
             test_line = self._wrap_text(f"{summary} @ {location} @ {teacher}", c.US_ROW_MAX_UNIT)
             if len(test_line) == 1:
@@ -408,8 +407,8 @@ class ImageGenerator:
             fill=c.RANKING_SUBTITLE_COLOR,
         )
 
-        user_ids = [data["user_id"] for data in ranking_data]
-        avatar_datas = await self._fetch_avatars(user_ids)
+        avatar_urls = [data.get("avatar") for data in ranking_data]
+        avatar_datas = await self._fetch_avatars(avatar_urls)
 
         y_offset = c.RANKING_HEADER_HEIGHT
         for i, data in enumerate(ranking_data):
@@ -430,8 +429,8 @@ class ImageGenerator:
             rank_text = str(rank)
             try:
                 rank_bbox = self.font_rank.getbbox(rank_text)
-                rank_width = rank_bbox - rank_bbox
-                rank_height = rank_bbox - rank_bbox
+                rank_width = rank_bbox[2] - rank_bbox[0]
+                rank_height = rank_bbox[3] - rank_bbox[1]
             except (TypeError, ValueError):
                 rank_width = 10
                 rank_height = 10
@@ -479,7 +478,7 @@ class ImageGenerator:
 
             try:
                 duration_bbox = self.font_text.getbbox(duration_str)
-                duration_width = duration_bbox - duration_bbox
+                duration_width = duration_bbox[2] - duration_bbox[0]
             except (TypeError, ValueError):
                 duration_width = 100
             draw.text(
@@ -494,7 +493,7 @@ class ImageGenerator:
 
             try:
                 count_bbox = self.font_subtitle.getbbox(count_str)
-                count_width = count_bbox - count_bbox
+                count_width = count_bbox[2] - count_bbox[0]
             except (TypeError, ValueError):
                 count_width = 80
             draw.text(
